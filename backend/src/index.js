@@ -89,7 +89,20 @@ export default {
         const sEnd = pickExistingColumn(s, ["end_sec", "end", "end_time"]);
 
         if (!sEpisodeId || !sText) {
-          return jsonResponse({ error: "Schema missing required segment columns" }, 500, env);
+          return jsonResponse(
+            {
+              keyword: keyword || null,
+              facts: [],
+              pagination: {
+                limit,
+                offset,
+                returned: 0,
+                note: "Segments table columns are not available in this DB schema",
+              },
+            },
+            200,
+            env,
+          );
         }
 
         const likeValue = `%${escapeLike(keyword)}%`;
@@ -219,8 +232,8 @@ export default {
         const sIdx = pickExistingColumn(s, ["segment_index", "idx", "order_idx", "seq"]);
         const eId = pickExistingColumn(e, ["id", "episode_id", "canonical_id", "uuid"]);
 
-        if (!eId || !sEpisodeId || !sText) {
-          return jsonResponse({ error: "Schema missing required columns" }, 500, env);
+        if (!eId) {
+          return jsonResponse({ error: "Schema missing required episode columns" }, 500, env);
         }
 
         let episode = null;
@@ -242,22 +255,29 @@ export default {
           return jsonResponse({ error: "Episode not found" }, 404, env);
         }
 
-        const segRows = await executeSQL(
-          dbUrl,
-          token,
-          `SELECT *, rowid as __rowid FROM segments WHERE ${sEpisodeId} = ? ORDER BY ${sIdx || "__rowid"} ASC`,
-          [toSqlArg(episodePrimaryId(episode, eId) || String(episode.__rowid))],
-        );
+        const segments = [];
+        if (sEpisodeId && sText) {
+          const segRows = await executeSQL(
+            dbUrl,
+            token,
+            `SELECT *, rowid as __rowid FROM segments WHERE ${sEpisodeId} = ? ORDER BY ${sIdx || "__rowid"} ASC`,
+            [toSqlArg(episodePrimaryId(episode, eId) || String(episode.__rowid))],
+          );
 
-        return jsonResponse(
-          {
-            episode,
-            segments: segRows.rows.map((r) => ({
+          segments.push(
+            ...segRows.rows.map((r) => ({
               idx: sIdx ? r[sIdx] : null,
               start_sec: sStart ? r[sStart] : null,
               end_sec: sEnd ? r[sEnd] : null,
               text: r[sText] || "",
             })),
+          );
+        }
+
+        return jsonResponse(
+          {
+            episode,
+            segments,
           },
           200,
           env,
