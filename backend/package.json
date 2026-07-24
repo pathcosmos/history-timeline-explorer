@@ -1,0 +1,16 @@
+{
+  "name": "history-timeline-worker",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev src/index.js",
+    "deploy": "wrangler deploy",
+    "build": "wrangler deploy --dry-run"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "^3.80.0",
+    "@cloudflare/workers-types": "^4.20240620.0"
+  }
+}

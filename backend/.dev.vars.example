@@ -1,0 +1,3 @@
+TIMELINE_DB_URL=https://22j-pathcosmos.aws-us-east-1.turso.io
+TIMELINE_DB_TOKEN=YOUR_TURSO_JWT_TOKEN
+ALLOWED_ORIGINS=http://localhost:5173

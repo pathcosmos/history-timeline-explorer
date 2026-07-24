@@ -1,0 +1,8 @@
+name = "history-timeline-api"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+TIMELINE_DB_URL = "https://22j-pathcosmos.aws-us-east-1.turso.io"
+ALLOWED_ORIGINS = "http://localhost:5173"

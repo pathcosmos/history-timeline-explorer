@@ -1,0 +1,95 @@
+name: Deploy history-timeline stack to Cloudflare
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Deploy Worker API
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Verify Worker build
+        working-directory: backend
+        run: npm run build
+
+      - name: Sync Worker DB token secret
+        if: ${{ secrets.TIMELINE_DB_TOKEN != '' }}
+        working-directory: backend
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: |
+          printf '%s' '${{ secrets.TIMELINE_DB_TOKEN }}' | npx wrangler secret put TIMELINE_DB_TOKEN
+
+      - name: Deploy Cloudflare Worker
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          working-directory: backend
+          command: deploy
+          environment: production
+
+      - name: Verify Worker health and list API
+        if: ${{ vars.DEPLOY_API_BASE != '' }}
+        run: |
+          echo "Checking worker health: ${{ vars.DEPLOY_API_BASE }}/api/health"
+          curl -fsSL --max-time 30 "${{ vars.DEPLOY_API_BASE }}/api/health"
+
+          echo "Checking episodes API: ${{ vars.DEPLOY_API_BASE }}/api/episodes?limit=1&sort=asc"
+          curl -fsSL --max-time 30 "${{ vars.DEPLOY_API_BASE }}/api/episodes?limit=1&sort=asc"
+
+          echo "Checking facts API: ${{ vars.DEPLOY_API_BASE }}/api/facts?limit=1&sort=asc"
+          curl -fsSL --max-time 30 "${{ vars.DEPLOY_API_BASE }}/api/facts?limit=1&sort=asc"
+  frontend:
+    name: Deploy Frontend Pages
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    needs: [backend]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE: ${{ vars.DEPLOY_API_BASE }}
+        run: npm run build
+
+      - name: Deploy to Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: pages deploy frontend/dist --project-name=${{ vars.CF_PAGES_PROJECT }}
+
+      - name: Verify frontend site
+        if: ${{ vars.CF_PAGES_PROJECT != '' }}
+        run: |
+          echo "Checking Pages site: https://${{ vars.CF_PAGES_PROJECT }}.pages.dev"
+          curl -fsSL --max-time 30 "https://${{ vars.CF_PAGES_PROJECT }}.pages.dev"
