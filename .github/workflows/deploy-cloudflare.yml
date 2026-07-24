@@ -29,12 +29,16 @@ jobs:
         run: npm run build
 
       - name: Sync Worker DB token secret
-        if: ${{ secrets.TIMELINE_DB_TOKEN != '' }}
         working-directory: backend
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          TIMELINE_DB_TOKEN: ${{ secrets.TIMELINE_DB_TOKEN }}
         run: |
-          printf '%s' '${{ secrets.TIMELINE_DB_TOKEN }}' | npx wrangler secret put TIMELINE_DB_TOKEN
+          if [ -n "$TIMELINE_DB_TOKEN" ]; then
+            printf '%s' "$TIMELINE_DB_TOKEN" | npx wrangler secret put TIMELINE_DB_TOKEN
+          else
+            echo "TIMELINE_DB_TOKEN not set. Skip sync."
+          fi
 
       - name: Deploy Cloudflare Worker
         uses: cloudflare/wrangler-action@v3
