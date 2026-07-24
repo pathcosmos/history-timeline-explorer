@@ -45,9 +45,8 @@ jobs:
         with:
           apiToken: ${{ secrets.CF_API_TOKEN }}
           accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          working-directory: backend
+          workingDirectory: backend
           command: deploy
-          environment: production
 
       - name: Verify Worker health and list API
         if: ${{ vars.DEPLOY_API_BASE != '' }}
