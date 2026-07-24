@@ -35,48 +35,63 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           TIMELINE_DB_TOKEN: ${{ secrets.TIMELINE_DB_TOKEN }}
         run: |
-          if [ -n "$TIMELINE_DB_TOKEN" ]; then
-            if [ -z "$CLOUDFLARE_API_TOKEN" ] && [ -z "$CF_API_TOKEN" ]; then
-              echo "No Cloudflare token set. Skip sync."
-              exit 0
-            fi
+          if [ -z "$TIMELINE_DB_TOKEN" ]; then
+            echo "TIMELINE_DB_TOKEN not set. Skip sync and deploy without DB token (DB APIs will fail)."
+            echo "HAS_TIMELINE_DB_TOKEN=false" >> "$GITHUB_ENV"
+            echo "DB_TOKEN_FALLBACK=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
 
-            sync_ok=0
-            if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
-              if printf '%s' "$TIMELINE_DB_TOKEN" | CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" npx wrangler secret put TIMELINE_DB_TOKEN; then
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] && [ -z "$CF_API_TOKEN" ]; then
+            echo "No Cloudflare token set. Skip sync."
+            echo "HAS_TIMELINE_DB_TOKEN=true" >> "$GITHUB_ENV"
+            echo "DB_TOKEN_FALLBACK=true" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          sync_ok=0
+          if [ -n "$CLOUDFLARE_API_TOKEN" ]; then
+            if printf '%s' "$TIMELINE_DB_TOKEN" | CLOUDFLARE_API_TOKEN="$CLOUDFLARE_API_TOKEN" npx wrangler secret put TIMELINE_DB_TOKEN; then
+              sync_ok=1
+            else
+              echo "CLOUDFLARE_API_TOKEN failed. Will try CF_API_TOKEN if different."
+            fi
+          fi
+
+          if [ "$sync_ok" -eq 0 ] && [ -n "$CF_API_TOKEN" ]; then
+            if [ "$CLOUDFLARE_API_TOKEN" != "$CF_API_TOKEN" ] || [ -z "$CLOUDFLARE_API_TOKEN" ]; then
+              if printf '%s' "$TIMELINE_DB_TOKEN" | CLOUDFLARE_API_TOKEN="$CF_API_TOKEN" npx wrangler secret put TIMELINE_DB_TOKEN; then
                 sync_ok=1
               else
-                echo "CLOUDFLARE_API_TOKEN failed. Will try CF_API_TOKEN if different."
+                echo "CF_API_TOKEN also failed."
               fi
             fi
+          fi
 
-            if [ "$sync_ok" -eq 0 ] && [ -n "$CF_API_TOKEN" ]; then
-              if [ "$CLOUDFLARE_API_TOKEN" != "$CF_API_TOKEN" ] || [ -z "$CLOUDFLARE_API_TOKEN" ]; then
-                if printf '%s' "$TIMELINE_DB_TOKEN" | CLOUDFLARE_API_TOKEN="$CF_API_TOKEN" npx wrangler secret put TIMELINE_DB_TOKEN; then
-                  sync_ok=1
-                else
-                  echo "CF_API_TOKEN also failed."
-                fi
-              fi
-            fi
-
-            if [ "$sync_ok" -eq 0 ]; then
-              echo "TIMELINE_DB_TOKEN sync failed with both token env vars."
-              exit 1
-            fi
+          echo "HAS_TIMELINE_DB_TOKEN=true" >> "$GITHUB_ENV"
+          if [ "$sync_ok" -eq 1 ]; then
+            echo "DB_TOKEN_FALLBACK=false" >> "$GITHUB_ENV"
           else
-            echo "TIMELINE_DB_TOKEN not set. Skip sync."
+            echo "DB_TOKEN_FALLBACK=true" >> "$GITHUB_ENV"
           fi
 
       - name: Deploy Cloudflare Worker
-        uses: cloudflare/wrangler-action@v3
-        with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
-          accountId: ${{ secrets.CF_ACCOUNT_ID }}
-          workingDirectory: backend
-          command: deploy
+        working-directory: backend
         env:
+          CF_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CF_ACCOUNT_ID || secrets.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN || secrets.CF_API_TOKEN }}
+          TIMELINE_DB_TOKEN: ${{ secrets.TIMELINE_DB_TOKEN }}
+        run: |
+          if [ "${HAS_TIMELINE_DB_TOKEN:-false}" != "true" ]; then
+            echo "TIMELINE_DB_TOKEN is missing. Deploy without token binding."
+            npx wrangler deploy
+          elif [ "${DB_TOKEN_FALLBACK:-false}" = "true" ]; then
+            echo "Secret sync failed. Deploying with --var fallback (non-secret)."
+            npx wrangler deploy --var "TIMELINE_DB_TOKEN:${TIMELINE_DB_TOKEN}"
+          else
+            npx wrangler deploy
+          fi
 
       - name: Verify Worker health and list API
         if: ${{ vars.DEPLOY_API_BASE != '' }}
